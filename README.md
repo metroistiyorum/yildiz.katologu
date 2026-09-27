@@ -1,1 +1,850 @@
-# yildiz.katologu
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Yıldız Haritası - Final Sürüm</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', monospace; }
+        
+        #ui-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 100;
+        }
+
+        /* --- ANA BİLGİ PANELİ --- */
+        .info-panel {
+            position: absolute; top: 20px; left: 20px;
+            pointer-events: auto;
+            background: rgba(10, 15, 20, 0.95);
+            border: 1px solid #444; 
+            padding: 15px; border-radius: 4px; color: #eee;
+            width: 320px;
+            max-height: 80vh; overflow-y: auto;
+        }
+
+        /* --- İSTATİSTİK PANELİ --- */
+        #stats-panel {
+            position: absolute; bottom: 30px; left: 30px;
+            pointer-events: auto;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            padding: 12px 25px;
+            background: rgba(10, 25, 40, 0.7);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(0, 210, 255, 0.2);
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        }
+
+        .stat-item { display: flex; flex-direction: column; align-items: center; }
+        .stat-value {
+            font-family: 'Segoe UI', sans-serif; font-size: 24px; font-weight: 700;
+            color: #00d2ff; line-height: 1; text-shadow: 0 0 10px rgba(0, 210, 255, 0.4);
+        }
+        .stat-label {
+            font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px;
+            color: #aaa; margin-top: 4px; font-weight: 600;
+        }
+        .stat-divider {
+            width: 1px; height: 35px;
+            background: linear-gradient(to bottom, transparent, rgba(255,255,255,0.2), transparent);
+        }
+
+        .data-display {
+            font-family: 'Courier New', monospace; font-size: 11px; color: #00ff00;
+            margin-top: 10px; white-space: pre-line;
+            background: #000; padding: 5px; border: 1px solid #333;
+        }
+
+        .controls {
+            position: absolute; bottom: 30px; right: 30px;
+            pointer-events: auto;
+            display: flex; flex-direction: column; gap: 5px;
+            align-items: flex-end;
+        }
+
+        button {
+            background: #222; color: #ccc; border: 1px solid #555;
+            padding: 8px 15px; cursor: pointer; font-size: 11px;
+            width: 180px; text-align: right; transition: all 0.2s;
+        }
+        button:hover { background: #444; color: #fff; border-color: #888; }
+
+        .mode-row {
+            display: flex; align-items: center; gap: 5px;
+            margin-bottom: 5px; background: rgba(0,0,0,0.3); border-radius: 4px;
+        }
+        
+        .settings-row {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 10px; margin-bottom: 5px;
+            background: rgba(0, 50, 70, 0.3); border: 1px solid #005566;
+            border-radius: 4px; font-size: 12px; font-weight: bold; color: #ccffff;
+        }
+
+        .mode-btn {
+            background: linear-gradient(90deg, #111, #222);
+            border: 1px solid #00d2ff; color: #fff;
+            padding: 10px; flex-grow: 1; text-align: center; cursor: pointer;
+            font-weight: bold; font-size: 12px; border-radius: 4px;
+            box-shadow: 0 0 5px rgba(0, 210, 255, 0.1);
+            user-select: none; box-sizing: border-box;
+        }
+        .mode-btn:hover { background: #003344; }
+
+        .dwarf-toggle {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            padding: 0 5px; min-width: 45px; font-size: 9px; color: #aaa; cursor: pointer;
+        }
+        .dwarf-toggle input { cursor: pointer; margin: 2px 0; }
+
+        /* --- ETİKET STİLLERİ --- */
+        .star-label {
+            color: rgba(255,255,255,0.8); font-size: 9px; 
+            text-shadow: 1px 1px 0 #000; margin-top: -15px;
+            pointer-events: none; 
+            user-select: none;
+            will-change: transform; 
+        }
+        
+        .cat-local { color: #ffcccc; font-size: 9px; opacity: 0.9; }
+        .cat-vega { color: #ccffff; font-size: 9px; opacity: 0.7; }
+        
+        .cat-neutron { 
+            color: #00ffff; font-size: 10px; font-weight: bold; opacity: 1; 
+            text-shadow: 0 0 5px rgba(0, 255, 255, 0.8); 
+        }
+
+        .cat-blackhole { 
+            color: #ff00ff; font-size: 10px; font-weight: bold; 
+            text-shadow: 0 0 3px #ff00ff; 
+        }
+
+        .cat-distant { 
+            color: #ffffaa; font-size: 10px; font-weight: bold; 
+            text-shadow: 0 0 2px #ffff00; 
+        }
+
+        .measure-label {
+            background: #000; border: 1px solid #00ff00; color: #00ff00;
+            padding: 2px 6px; font-size: 12px; font-weight: bold;
+            border-radius: 3px;
+            pointer-events: none;
+        }
+    </style>
+    
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <div class="info-panel">
+            <div class="settings-row">
+                <span>Yıldız İsimleri</span>
+                <label style="display:flex; align-items:center; gap:5px; cursor:pointer; font-size:12px;">
+                    <input type="checkbox" id="chk-labels" checked onchange="window.updateVisibility()">
+                    Göster
+                </label>
+            </div>
+            
+            <div class="settings-row">
+                <span>15/30 Işık Yılı Ölçüm Küreleri</span>
+                <label style="display:flex; align-items:center; gap:5px; cursor:pointer; font-size:12px;">
+                    <input type="checkbox" id="chk-spheres" onchange="window.updateVisibility()">
+                    Göster
+                </label>
+            </div>
+
+            <div class="settings-row">
+                <span>15/30 Işık Yılı Ölçüm Halkaları</span>
+                <label style="display:flex; align-items:center; gap:5px; cursor:pointer; font-size:12px;">
+                    <input type="checkbox" id="chk-rings" checked onchange="window.updateVisibility()">
+                    Göster
+                </label>
+            </div>
+
+            <div class="settings-row" style="background: rgba(70, 50, 0, 0.3); border-color: #665500;">
+                <span>Ünlü Uzak Cisimler</span>
+                <label style="display:flex; align-items:center; gap:5px; cursor:pointer; color:#ffffaa; font-size:12px;">
+                    <input type="checkbox" id="chk-distant" onchange="window.updateVisibility()">
+                    Göster
+                </label>
+            </div>
+
+            <div class="mode-row" style="margin-top: 10px;">
+                <div class="mode-btn" id="btn-mode-0" onclick="window.setMode(0)">
+                    Sadece Güneşi Göster (Sıfırla)
+                </div>
+            </div>
+
+            <div class="mode-row">
+                <div class="mode-btn" id="btn-mode-1" onclick="window.setMode(1)">
+                    15 Işık Yılı
+                </div>
+                <label class="dwarf-toggle">
+                    <input type="checkbox" id="chk-dwarf-1" checked onchange="window.updateVisibility()">
+                    Cüceleri Göster
+                </label>
+            </div>
+
+            <div class="mode-row">
+                <div class="mode-btn" id="btn-mode-2" onclick="window.setMode(2)">
+                    30 Işık Yılı
+                </div>
+                <label class="dwarf-toggle">
+                    <input type="checkbox" id="chk-dwarf-2" checked onchange="window.updateVisibility()">
+                    Cüceleri Göster
+                </label>
+            </div>
+
+            <p style="font-size:11px; color:#aaa; margin:10px 0 5px 0;">
+                <span style="color:#aaddff">• Mavi/Beyaz:</span> O, B, A Sınıfı Sıcak Yıldızlar<br>
+                <span style="color:#ffffaa">• Sarı/Beyaz:</span> F, G Sınıfı Güneş Benzeri Yıldızlar<br>
+                <span style="color:#ffcc66">• Turuncu:</span> K Sınıfı Turuncu Cüceler<br>
+                <span style="color:#ff2222">• Kırmızı:</span> M Sınıfı Kırmızı Cüceler<br>
+                <span style="color:#ffffff">• Beyaz:</span> Beyaz Cüceler<br>
+                <span style="color:#00ffff">• Turkuaz:</span> Nötron Yıldızları<br>
+                <span style="color:#ff00ff">• Mor:</span> Karadelik
+            </p>
+            
+            <div id="measurement-data" class="data-display">
+                Durum: Yeni ölçüm için 1. yıldızı seçin.
+            </div>
+        </div>
+
+        <div id="stats-panel">
+            <div class="stat-item">
+                <span id="val-systems" class="stat-value">0</span>
+                <span class="stat-label">SİSTEM</span>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-item">
+                <span id="val-stars" class="stat-value">0</span>
+                <span class="stat-label">YILDIZ</span>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button onclick="window.resetAllMeasurements()" style="color:#ff8888; border-color:#ff8888;">Tüm Ölçümleri Temizle</button>
+            <button onclick="window.focusStar('Sun')">Güneş (Merkez)</button>
+            
+            <button onclick="window.measureToSun('Canopus')" style="border-color:#ffffaa; color:#ffffaa;">Canopus (310 ly)</button>
+            <button onclick="window.measureToSun('Polaris')" style="border-color:#ffffaa; color:#ffffaa;">Polaris (433 ly)</button>
+            <button onclick="window.measureToSun('Deneb')" style="border-color:#ffffaa; color:#ffffaa;">Deneb (2615 ly)</button>
+            <button onclick="window.measureToSun('Methuselah')" style="border-color:#ffffaa; color:#ffffaa;">Methuselah (190 ly)</button>
+            <button onclick="window.measureToSun('Neutron1')" style="border-color:#00ffff; color:#00ffff;">RX J1856 (400 ly)</button>
+            <button onclick="window.measureToSun('GaiaBH1')" style="border-color:#ff00ff; color:#ff00ff;">Gaia BH1 (1560 ly)</button>
+        </div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+        let scene, camera, renderer, labelRenderer, controls;
+        let starsMeshes = []; 
+        let sphere15Mesh, sphere30Mesh;
+        let ring15Mesh, ring30Mesh; 
+        let bgStars;
+        
+        let activeMeasurements = []; 
+        let selectedPoints = [];
+        let currentMode = 0; 
+        
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        const starData = [
+            { id: 'Sun', cat: 'major', name: "Güneş", ra: 0, dec: 0, dist: 0, color: 0xffff00, size: 0.2, type: 'G' },
+            { id: 'Neutron1', cat: 'distant', name: "RX J1856", ra: 18.94, dec: -37.9, dist: 400.0, color: 0x00ffff, size: 0.15, type: 'N' },
+            { id: 'GaiaBH1', cat: 'distant', name: "Gaia BH1", ra: 17.47, dec: -0.58, dist: 1560.0, color: 0x000000, size: 0.2, type: 'BH' },
+            { id: 'Canopus', cat: 'distant', name: "Canopus", ra: 6.39, dec: -52.69, dist: 310, color: 0xffffff, size: 0.5, type: 'F' },
+            { id: 'Polaris', cat: 'distant', name: "Polaris", ra: 2.53, dec: 89.26, dist: 433, color: 0xffffcc, size: 0.45, type: 'F' },
+            { id: 'Deneb', cat: 'distant', name: "Deneb", ra: 20.69, dec: 45.28, dist: 2615, color: 0xaaddff, size: 0.6, type: 'A' },
+            { id: 'Methuselah', cat: 'distant', name: "Methuselah (HD 140283)", ra: 15.72, dec: -10.93, dist: 190.1, color: 0xffeebb, size: 0.3, type: 'Sd' },
+            { id: 'Proxima', cat: 'local', name: "Proxima Cen", ra: 14.49, dec: -62.68, dist: 4.24, color: 0xff1111, size: 0.08, type: 'M' },
+            { id: 'AlphaCenA', cat: 'local', name: "Alpha Cen A", ra: 14.66, dec: -60.83, dist: 4.37, color: 0xffddaa, size: 0.22, type: 'G' },
+            { id: 'AlphaCenB', cat: 'local', name: "Alpha Cen B", ra: 14.66, dec: -60.83, dist: 4.37, color: 0xffcc99, size: 0.18, offsetRef: true, type: 'K' },
+            { id: 'Barnard', cat: 'local', name: "Barnard Yıldızı", ra: 17.96, dec: 4.69, dist: 5.96, color: 0xff2222, size: 0.09, type: 'M' },
+            { id: 'Wolf359', cat: 'local', name: "Wolf 359", ra: 10.93, dec: 7.01, dist: 7.86, color: 0xff0000, size: 0.06, type: 'M' },
+            { id: 'Lalande', cat: 'local', name: "Lalande 21185", ra: 11.05, dec: 35.97, dist: 8.31, color: 0xff3333, size: 0.09, type: 'M' },
+            { id: 'Sirius', cat: 'local', name: "Sirius A", ra: 6.75, dec: -16.71, dist: 8.60, color: 0xaaddff, size: 0.35, type: 'A' },
+            { id: 'SiriusB', cat: 'local', name: "Sirius B", ra: 6.75, dec: -16.71, dist: 8.60, color: 0xffffff, size: 0.04, offsetRef: true, type: 'D' },
+            { id: 'BLCeti', cat: 'local', name: "BL Ceti", ra: 1.65, dec: -17.93, dist: 8.73, color: 0xff1111, size: 0.06, type: 'M' },
+            { id: 'UVCeti', cat: 'local', name: "UV Ceti", ra: 1.65, dec: -17.93, dist: 8.73, color: 0xff1111, size: 0.06, offsetRef: true, type: 'M' },
+            { id: 'Ross154', cat: 'local', name: "Ross 154", ra: 18.82, dec: -23.88, dist: 9.68, color: 0xff2222, size: 0.07, type: 'M' },
+            { id: 'Ross248', cat: 'local', name: "Ross 248", ra: 23.69, dec: 44.17, dist: 10.30, color: 0xff2222, size: 0.07, type: 'M' },
+            { id: 'EpsilonEri', cat: 'local', name: "Epsilon Eridani", ra: 3.55, dec: -9.45, dist: 10.52, color: 0xffcc00, size: 0.16, type: 'K' },
+            { id: 'Lacaille9352', cat: 'local', name: "Lacaille 9352", ra: 23.09, dec: -35.85, dist: 10.74, color: 0xff4433, size: 0.09, type: 'M' },
+            { id: 'Ross128', cat: 'local', name: "Ross 128", ra: 11.79, dec: 0.80, dist: 11.03, color: 0xff2222, size: 0.07, type: 'M' },
+            { id: 'EZAqrA', cat: 'local', name: "EZ Aquarii A", ra: 22.64, dec: -15.36, dist: 11.10, color: 0xff1111, size: 0.06, type: 'M' },
+            { id: 'EZAqrB', cat: 'local', name: "EZ Aquarii B", ra: 22.64, dec: -15.36, dist: 11.10, color: 0xff1111, size: 0.05, offsetRef: true, type: 'M' },
+            { id: 'Procyon', cat: 'local', name: "Procyon A", ra: 7.65, dec: 5.21, dist: 11.46, color: 0xffffee, size: 0.28, type: 'F' },
+            { id: 'ProcyonB', cat: 'local', name: "Procyon B", ra: 7.65, dec: 5.21, dist: 11.46, color: 0xffffff, size: 0.04, offsetRef: true, type: 'D' },
+            { id: '61CygniA', cat: 'local', name: "61 Cygni A", ra: 21.11, dec: 38.75, dist: 11.41, color: 0xffaa55, size: 0.14, type: 'K' },
+            { id: '61CygniB', cat: 'local', name: "61 Cygni B", ra: 21.11, dec: 38.75, dist: 11.41, color: 0xff8844, size: 0.12, offsetRef: true, type: 'K' },
+            { id: 'Struve2398A', cat: 'local', name: "Struve 2398 A", ra: 18.71, dec: 59.62, dist: 11.52, color: 0xff2222, size: 0.07, type: 'M' },
+            { id: 'Struve2398B', cat: 'local', name: "Struve 2398 B", ra: 18.71, dec: 59.62, dist: 11.52, color: 0xff1111, size: 0.06, offsetRef: true, type: 'M' },
+            { id: 'Groombridge34A', cat: 'local', name: "Groombridge 34 A", ra: 0.30, dec: 44.02, dist: 11.62, color: 0xff2222, size: 0.08, type: 'M' },
+            { id: 'Groombridge34B', cat: 'local', name: "Groombridge 34 B", ra: 0.30, dec: 44.02, dist: 11.62, color: 0xff1111, size: 0.07, offsetRef: true, type: 'M' },
+            { id: 'DXCancri', cat: 'local', name: "DX Cancri", ra: 8.49, dec: 26.77, dist: 11.82, color: 0xff0000, size: 0.05, type: 'M' },
+            { id: 'EpsilonIndi', cat: 'local', name: "Epsilon Indi", ra: 22.00, dec: -56.78, dist: 11.83, color: 0xff9900, size: 0.14, type: 'K' },
+            { id: 'TauCeti', cat: 'local', name: "Tau Ceti", ra: 1.73, dec: -15.96, dist: 11.90, color: 0xffffaa, size: 0.18, type: 'G' },
+            { id: 'GJ1061', cat: 'local', name: "GJ 1061", ra: 3.59, dec: -44.51, dist: 11.99, color: 0xff1111, size: 0.06, type: 'M' },
+            { id: 'YZCeti', cat: 'local', name: "YZ Ceti", ra: 1.21, dec: -16.99, dist: 12.13, color: 0xff2222, size: 0.06, type: 'M' },
+            { id: 'LuytensStar', cat: 'local', name: "Luyten's Star", ra: 7.45, dec: 5.22, dist: 12.36, color: 0xff3322, size: 0.07, type: 'M' },
+            { id: 'Teegarden', cat: 'local', name: "Teegarden", ra: 2.88, dec: 16.88, dist: 12.51, color: 0xff1100, size: 0.05, type: 'M' },
+            { id: 'SCR1845A', cat: 'local', name: "SCR 1845", ra: 18.75, dec: -63.96, dist: 12.57, color: 0xff2222, size: 0.06, type: 'M' },
+            { id: 'Kapteyn', cat: 'local', name: "Kapteyn", ra: 5.19, dec: -45.01, dist: 12.76, color: 0xff5555, size: 0.08, type: 'M' },
+            { id: 'Lacaille8760', cat: 'local', name: "Lacaille 8760", ra: 21.28, dec: -38.87, dist: 12.87, color: 0xff4433, size: 0.09, type: 'M' },
+            { id: 'Kruger60A', cat: 'local', name: "Kruger 60 A", ra: 22.46, dec: 57.69, dist: 13.15, color: 0xff2222, size: 0.07, type: 'M' },
+            { id: 'Kruger60B', cat: 'local', name: "Kruger 60 B", ra: 22.46, dec: 57.69, dist: 13.15, color: 0xff1111, size: 0.06, offsetRef: true, type: 'M' },
+            { id: 'Ross614A', cat: 'local', name: "Ross 614 A", ra: 6.49, dec: -6.37, dist: 13.34, color: 0xff2222, size: 0.06, type: 'M' },
+            { id: 'Wolf1061', cat: 'local', name: "Wolf 1061", ra: 16.50, dec: -12.66, dist: 14.04, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'VanMaanen', cat: 'local', name: "Van Maanen 2", ra: 0.81, dec: 5.39, dist: 14.07, color: 0xeeeeff, size: 0.04, type: 'D' }, 
+            { id: 'Gliese1', cat: 'local', name: "Gliese 1", ra: 0.09, dec: -37.36, dist: 14.23, color: 0xff2222, size: 0.07, type: 'M' },
+            { id: 'Wolf424A', cat: 'local', name: "Wolf 424", ra: 12.55, dec: 9.03, dist: 14.30, color: 0xff2222, size: 0.06, type: 'M' },
+            { id: 'TZArietis', cat: 'local', name: "TZ Arietis", ra: 2.00, dec: 13.05, dist: 14.51, color: 0xff1111, size: 0.05, type: 'M' },
+            { id: 'Gliese687', cat: 'local', name: "Gliese 687", ra: 17.60, dec: 68.34, dist: 14.77, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'LHS292', cat: 'local', name: "LHS 292", ra: 10.80, dec: -11.34, dist: 14.81, color: 0xff1111, size: 0.05, type: 'M' },
+            { id: 'GJ1245A', cat: 'local', name: "GJ 1245 A", ra: 19.89, dec: 44.41, dist: 14.81, color: 0xff1100, size: 0.05, type: 'M' },
+            { id: 'GJ1245B', cat: 'local', name: "GJ 1245 B", ra: 19.89, dec: 44.41, dist: 14.81, color: 0xff1100, size: 0.05, offsetRef: true, type: 'M' },
+            { id: 'GJ440', cat: 'local', name: "GJ 440", ra: 11.76, dec: -64.84, dist: 15.10, color: 0xeefeff, size: 0.04, type: 'D' },
+            { id: 'Altair', cat: 'ext', name: "Altair", ra: 19.84, dec: 8.87, dist: 16.73, color: 0xffffff, size: 0.35, type: 'A' },
+            { id: 'KeidA', cat: 'ext', name: "Keid A", ra: 4.25, dec: -7.65, dist: 16.3, color: 0xffcc66, size: 0.14, type: 'K' },
+            { id: 'KeidB', cat: 'ext', name: "Keid B", ra: 4.25, dec: -7.65, dist: 16.3, color: 0xffffff, size: 0.05, offsetRef: true, type: 'D' },
+            { id: 'KeidC', cat: 'ext', name: "Keid C", ra: 4.25, dec: -7.65, dist: 16.3, color: 0xff1111, size: 0.05, offsetRef: true, type: 'M' },
+            { id: '70Ophiuchi', cat: 'ext', name: "70 Ophiuchi", ra: 18.08, dec: 2.50, dist: 16.6, color: 0xffaa44, size: 0.13, type: 'K' },
+            { id: 'Vega', cat: 'ext', name: "Vega", ra: 18.61, dec: 38.78, dist: 25.04, color: 0xccccff, size: 0.45, type: 'A' },
+            { id: 'Fomalhaut', cat: 'ext', name: "Fomalhaut", ra: 22.96, dec: -29.62, dist: 25.13, color: 0xffffff, size: 0.40, type: 'A' },
+            { id: 'Alsafi', cat: 'ext', name: "Alsafi", ra: 19.54, dec: 69.66, dist: 18.77, color: 0xffdd88, size: 0.15, type: 'K' },
+            { id: 'Achird', cat: 'ext', name: "Achird", ra: 0.82, dec: 57.81, dist: 19.42, color: 0xffffaa, size: 0.16, type: 'G' },
+            { id: 'DeltaPavonis', cat: 'ext', name: "Delta Pavonis", ra: 20.14, dec: -66.18, dist: 19.92, color: 0xffffbb, size: 0.18, type: 'G' },
+            { id: 'XiBootis', cat: 'ext', name: "Xi Bootis", ra: 14.85, dec: 19.18, dist: 21.85, color: 0xffffcc, size: 0.16, type: 'G' },
+            { id: 'BetaHydri', cat: 'ext', name: "Beta Hydri", ra: 0.43, dec: -77.25, dist: 24.38, color: 0xffffdd, size: 0.20, type: 'G' },
+            { id: '61Virginis', cat: 'ext', name: "61 Virginis", ra: 13.31, dec: -18.31, dist: 27.9, color: 0xffffee, size: 0.17, type: 'G' },
+            { id: 'GammaLeporis', cat: 'ext', name: "Gamma Leporis", ra: 5.74, dec: -22.45, dist: 29.3, color: 0xffffee, size: 0.25, type: 'F' },
+            { id: 'Rana', cat: 'ext', name: "Rana", ra: 3.72, dec: -9.77, dist: 29.5, color: 0xffddaa, size: 0.16, type: 'K' },
+            { id: 'Chara', cat: 'ext', name: "Chara", ra: 12.56, dec: 41.35, dist: 27.5, color: 0xffffcc, size: 0.20, type: 'G' },
+            { id: 'BetaComae', cat: 'ext', name: "Beta Comae", ra: 13.20, dec: 27.88, dist: 29.9, color: 0xffffcc, size: 0.18, type: 'G' },
+            { id: 'Kappa1Ceti', cat: 'ext', name: "Kappa1 Ceti", ra: 3.32, dec: 3.37, dist: 29.8, color: 0xffffcc, size: 0.17, type: 'G' },
+            { id: 'pEridani', cat: 'ext', name: "p Eridani", ra: 1.66, dec: -56.20, dist: 26.7, color: 0xffbb66, size: 0.14, type: 'K' },
+            { id: 'Groombridge1830', cat: 'ext', name: "Groombridge 1830", ra: 11.87, dec: 37.72, dist: 29.9, color: 0xffcc44, size: 0.14, type: 'G' },
+            { id: 'GJ412A', cat: 'ext', name: "Gliese 412 A", ra: 11.09, dec: 43.68, dist: 15.80, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'GJ412B', cat: 'ext', name: "Gliese 412 B", ra: 11.09, dec: 43.68, dist: 15.80, color: 0xff2222, size: 0.06, offsetRef: true, type: 'M' },
+            { id: 'GJ832', cat: 'ext', name: "Gliese 832", ra: 21.55, dec: -49.00, dist: 16.20, color: 0xff3333, size: 0.08, type: 'M' },
+            { id: 'ADLeonis', cat: 'ext', name: "AD Leonis", ra: 10.33, dec: 19.87, dist: 16.00, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'GJ682', cat: 'ext', name: "Gliese 682", ra: 17.62, dec: -44.32, dist: 16.30, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'EVLac', cat: 'ext', name: "EV Lacertae", ra: 22.78, dec: 44.33, dist: 16.50, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'GJ445', cat: 'ext', name: "Gliese 445", ra: 11.80, dec: 78.69, dist: 17.60, color: 0xff2222, size: 0.07, type: 'M' },
+            { id: 'Stein2051A', cat: 'ext', name: "Stein 2051 A", ra: 4.52, dec: 58.97, dist: 18.00, color: 0xff3333, size: 0.06, type: 'M' },
+            { id: 'GJ205', cat: 'ext', name: "Gliese 205", ra: 5.52, dec: -8.65, dist: 18.60, color: 0xff4433, size: 0.08, type: 'M' },
+            { id: 'GJ229', cat: 'ext', name: "Gliese 229", ra: 6.18, dec: -21.86, dist: 18.80, color: 0xff3333, size: 0.08, type: 'M' },
+            { id: 'GJ570B', cat: 'ext', name: "Gliese 570 B", ra: 14.96, dec: -21.06, dist: 19.20, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'GJ908', cat: 'ext', name: "Gliese 908", ra: 23.97, dec: 65.43, dist: 19.30, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'GJ581', cat: 'ext', name: "Gliese 581", ra: 15.32, dec: -7.05, dist: 20.40, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'EQPegA', cat: 'ext', name: "EQ Pegasi A", ra: 23.53, dec: 28.60, dist: 20.40, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'EQPegB', cat: 'ext', name: "EQ Pegasi B", ra: 23.53, dec: 28.60, dist: 20.40, color: 0xff2222, size: 0.06, offsetRef: true, type: 'M' },
+            { id: 'GJ1156', cat: 'ext', name: "Gliese 1156", ra: 12.31, dec: 11.13, dist: 21.30, color: 0xff2222, size: 0.06, type: 'M' },
+            { id: 'GJ667C', cat: 'ext', name: "Gliese 667 C", ra: 17.30, dec: -34.99, dist: 23.60, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'GJ1005', cat: 'ext', name: "Gliese 1005", ra: 0.25, dec: -63.48, dist: 19.60, color: 0xff2222, size: 0.06, type: 'M' },
+            { id: 'GJ3379', cat: 'ext', name: "Gliese 3379", ra: 6.00, dec: 54.00, dist: 17.50, color: 0xff2222, size: 0.06, type: 'M' },
+            { id: 'GJ15A', cat: 'ext', name: "Gliese 15 A", ra: 0.31, dec: 44.02, dist: 11.60, color: 0xff3322, size: 0.07, type: 'M' },
+            { id: 'GJ54.1', cat: 'ext', name: "Gliese 54.1", ra: 1.18, dec: -15.89, dist: 12.1, color: 0xff2222, size: 0.06, type: 'M' },
+            { id: 'GJ83.1', cat: 'ext', name: "Gliese 83.1", ra: 2.00, dec: 13.05, dist: 14.5, color: 0xff2222, size: 0.06, type: 'M' },
+            { id: 'GJ169.1', cat: 'ext', name: "Gliese 169.1", ra: 4.52, dec: 58.97, dist: 18.0, color: 0xff3333, size: 0.06, type: 'M' },
+            { id: 'GJ191', cat: 'ext', name: "Gliese 191", ra: 5.19, dec: -45.01, dist: 12.8, color: 0xff4433, size: 0.08, type: 'M' },
+            { id: 'GJ231.1', cat: 'ext', name: "Gliese 231.1", ra: 6.20, dec: 48.06, dist: 28.5, color: 0xff3333, size: 0.06, type: 'M' },
+            { id: 'GJ251', cat: 'ext', name: "Gliese 251", ra: 6.89, dec: 33.27, dist: 18.2, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'GJ273', cat: 'ext', name: "Gliese 273", ra: 7.45, dec: 5.22, dist: 12.4, color: 0xff3322, size: 0.07, type: 'M' },
+            { id: 'GJ285', cat: 'ext', name: "Gliese 285", ra: 7.73, dec: 4.23, dist: 19.3, color: 0xff2222, size: 0.06, type: 'M' },
+            { id: 'GJ382', cat: 'ext', name: "Gliese 382", ra: 10.20, dec: 8.81, dist: 25.3, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'GJ388', cat: 'ext', name: "Gliese 388", ra: 10.33, dec: 19.87, dist: 15.9, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'GJ393', cat: 'ext', name: "Gliese 393", ra: 10.47, dec: 6.91, dist: 23.0, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'GJ406', cat: 'ext', name: "Gliese 406", ra: 10.93, dec: 7.01, dist: 7.8, color: 0xff1100, size: 0.06, type: 'M' },
+            { id: 'GJ411', cat: 'ext', name: "Gliese 411", ra: 11.06, dec: 35.97, dist: 8.3, color: 0xff4433, size: 0.08, type: 'M' },
+            { id: 'GJ433', cat: 'ext', name: "Gliese 433", ra: 11.59, dec: -32.54, dist: 29.5, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'GJ447', cat: 'ext', name: "Gliese 447", ra: 11.79, dec: 0.80, dist: 11.0, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'GJ486', cat: 'ext', name: "Gliese 486", ra: 12.80, dec: 9.91, dist: 26.3, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'GJ514', cat: 'ext', name: "Gliese 514", ra: 13.50, dec: 10.59, dist: 24.9, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'GJ514', cat: 'ext', name: "Gliese 514", ra: 13.50, dec: 10.59, dist: 24.9, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'GJ526', cat: 'ext', name: "Gliese 526", ra: 13.76, dec: 14.90, dist: 17.7, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'GJ555', cat: 'ext', name: "Gliese 555", ra: 14.57, dec: 12.36, dist: 20.4, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'GJ625', cat: 'ext', name: "Gliese 625", ra: 16.42, dec: 54.30, dist: 21.3, color: 0xff3333, size: 0.06, type: 'M' },
+            { id: 'GJ628', cat: 'ext', name: "Gliese 628", ra: 16.50, dec: -12.66, dist: 14.0, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'GJ674', cat: 'ext', name: "Gliese 674", ra: 17.48, dec: -46.90, dist: 14.8, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'GJ687', cat: 'ext', name: "Gliese 687", ra: 17.60, dec: 68.34, dist: 14.8, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'GJ699', cat: 'ext', name: "Gliese 699", ra: 17.96, dec: 4.69, dist: 6.0, color: 0xff2222, size: 0.09, type: 'M' },
+            { id: 'GJ729', cat: 'ext', name: "Gliese 729", ra: 18.82, dec: -23.88, dist: 9.7, color: 0xff2222, size: 0.07, type: 'M' },
+            { id: 'GJ752A', cat: 'ext', name: "Gliese 752 A", ra: 19.28, dec: 5.16, dist: 19.3, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'GJ752B', cat: 'ext', name: "Gliese 752 B", ra: 19.28, dec: 5.16, dist: 19.3, color: 0xff1100, size: 0.05, offsetRef:true, type: 'M' },
+            { id: 'GJ754', cat: 'ext', name: "Gliese 754", ra: 19.35, dec: -19.46, dist: 19.2, color: 0xff3333, size: 0.06, type: 'M' },
+            { id: 'GJ785', cat: 'ext', name: "Gliese 785", ra: 20.25, dec: -27.08, dist: 28.7, color: 0xffaa44, size: 0.09, type: 'K' },
+            { id: 'GJ849', cat: 'ext', name: "Gliese 849", ra: 22.16, dec: -4.64, dist: 28.7, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'GJ876', cat: 'ext', name: "Gliese 876", ra: 22.89, dec: -14.26, dist: 15.3, color: 0xff3322, size: 0.07, type: 'M' },
+            { id: 'GJ887', cat: 'ext', name: "Gliese 887", ra: 23.09, dec: -35.85, dist: 10.7, color: 0xff4433, size: 0.09, type: 'M' },
+            { id: 'GJ896A', cat: 'ext', name: "Gliese 896 A", ra: 23.53, dec: 19.92, dist: 20.6, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'GJ905', cat: 'ext', name: "Gliese 905", ra: 23.69, dec: 44.17, dist: 10.3, color: 0xff2222, size: 0.07, type: 'M' },
+            { id: 'GJ982.7', cat: 'ext', name: "Gliese 982.7", ra: 0.30, dec: -4.67, dist: 24.8, color: 0xff3333, size: 0.06, type: 'M' },
+            { id: 'GJ1002', cat: 'ext', name: "Gliese 1002", ra: 0.11, dec: -4.33, dist: 15.8, color: 0xff2222, size: 0.06, type: 'M' },
+            { id: 'GJ1151', cat: 'ext', name: "Gliese 1151", ra: 11.87, dec: 48.97, dist: 26.2, color: 0xff3333, size: 0.06, type: 'M' },
+            { id: 'LTT_1445A', cat: 'ext', name: "LTT 1445 A", ra: 3.03, dec: -16.63, dist: 22.4, color: 0xff3333, size: 0.06, type: 'M' },
+            { id: 'Gliese_317', cat: 'ext', name: "Gliese 317", ra: 8.68, dec: -23.61, dist: 29.9, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'Gliese_849', cat: 'ext', name: "Gliese 849", ra: 22.16, dec: -4.64, dist: 28.7, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'LHS_1723', cat: 'ext', name: "LHS 1723", ra: 5.03, dec: -6.91, dist: 17.5, color: 0xff2222, size: 0.06, type: 'M' },
+            { id: 'Gliese_399', cat: 'ext', name: "Gliese 399", ra: 10.65, dec: 78.69, dist: 21.0, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'Gliese_250', cat: 'ext', name: "Gliese 250", ra: 6.88, dec: -5.18, dist: 28.4, color: 0xffaa44, size: 0.09, type: 'K' },
+            { id: 'Gliese_701', cat: 'ext', name: "Gliese 701", ra: 17.98, dec: -77.40, dist: 25.5, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'Gliese_268', cat: 'ext', name: "Gliese 268", ra: 7.17, dec: 38.08, dist: 20.9, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'Gliese_686', cat: 'ext', name: "Gliese 686", ra: 17.63, dec: 18.57, dist: 26.6, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'Gliese_109', cat: 'ext', name: "Gliese 109", ra: 2.74, dec: 26.69, dist: 24.7, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'Gliese_299', cat: 'ext', name: "Gliese 299", ra: 8.19, dec: 36.23, dist: 22.2, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'Gliese_809', cat: 'ext', name: "Gliese 809", ra: 20.89, dec: 62.15, dist: 23.0, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'Gliese_1105', cat: 'ext', name: "Gliese 1105", ra: 7.95, dec: 66.21, dist: 26.6, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'Gliese_661', cat: 'ext', name: "Gliese 661", ra: 17.20, dec: 34.02, dist: 20.0, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'Gliese_105', cat: 'ext', name: "Gliese 105", ra: 2.61, dec: 4.54, dist: 23.5, color: 0xffaa44, size: 0.1, type: 'K' },
+            { id: 'Gliese_623', cat: 'ext', name: "Gliese 623", ra: 16.41, dec: 48.37, dist: 26.3, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'Gliese_829', cat: 'ext', name: "Gliese 829", ra: 21.48, dec: 17.68, dist: 21.9, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'Gliese_880', cat: 'ext', name: "Gliese 880", ra: 22.94, dec: -16.03, dist: 22.4, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'Gliese_438', cat: 'ext', name: "Gliese 438", ra: 11.69, dec: 75.29, dist: 27.4, color: 0xff3333, size: 0.07, type: 'M' },
+            { id: 'Gliese_784', cat: 'ext', name: "Gliese 784", ra: 20.22, dec: -45.02, dist: 20.2, color: 0xffaa44, size: 0.1, type: 'K' }
+        ];
+
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 50000);
+            camera.position.set(0, 15, 35); 
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.body.appendChild(renderer.domElement);
+
+            labelRenderer = new CSS2DRenderer();
+            labelRenderer.setSize(window.innerWidth, window.innerHeight);
+            labelRenderer.domElement.style.position = 'absolute';
+            labelRenderer.domElement.style.top = '0px';
+            labelRenderer.domElement.style.pointerEvents = 'none'; 
+            document.body.appendChild(labelRenderer.domElement);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+            
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+            camera.add(dirLight);
+            scene.add(camera);
+
+            const grid = new THREE.GridHelper(60, 30, 0x222222, 0x111111); 
+            scene.add(grid);
+
+            createBackgroundStars();
+            createStars();
+            createBoundarySpheres(); 
+            createPlaneRings(); 
+            
+            window.setMode(0);
+            
+            window.addEventListener('resize', onWindowResize);
+            window.addEventListener('pointerdown', onPointerDown);
+            animate();
+        }
+
+        function createBackgroundStars() {
+            const bgGeo = new THREE.BufferGeometry();
+            const bgCount = 2000; 
+            const posArray = new Float32Array(bgCount * 3);
+            const radius = 30000; 
+
+            for(let i=0; i<bgCount; i++) {
+                 const i3 = i * 3;
+                 const theta = THREE.MathUtils.randFloatSpread(360);
+                 const phi = THREE.MathUtils.randFloatSpread(180);
+
+                 posArray[i3] = radius * Math.sin(theta) * Math.cos(phi);
+                 posArray[i3+1] = radius * Math.sin(theta) * Math.sin(phi);
+                 posArray[i3+2] = radius * Math.cos(theta);
+            }
+            bgGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+            
+            // Arka plan yıldızları daha silik ve yumuşak hale getirildi (opacity: 0.35, size: 1.2)
+            const bgMat = new THREE.PointsMaterial({
+                color: 0x666666,
+                size: 1.2,
+                transparent: true,
+                opacity: 0.35,
+                sizeAttenuation: false
+            });
+            bgStars = new THREE.Points(bgGeo, bgMat);
+            bgStars.frustumCulled = false;
+            scene.add(bgStars);
+        }
+
+        function createBoundarySpheres() {
+            const mat15 = new THREE.MeshPhongMaterial({
+                color: 0x00d2ff, transparent: true, opacity: 0.1,
+                specular: 0x111111, shininess: 100, side: THREE.DoubleSide,
+                depthWrite: false, blending: THREE.AdditiveBlending
+            });
+            const geo15 = new THREE.SphereGeometry(15, 64, 64);
+            sphere15Mesh = new THREE.Mesh(geo15, mat15);
+            sphere15Mesh.visible = false;
+            scene.add(sphere15Mesh);
+
+            const mat30 = new THREE.MeshPhongMaterial({
+                color: 0xff4422, transparent: true, opacity: 0.08,
+                specular: 0x111111, shininess: 100, side: THREE.DoubleSide,
+                depthWrite: false, blending: THREE.AdditiveBlending
+            });
+            const geo30 = new THREE.SphereGeometry(30, 64, 64);
+            sphere30Mesh = new THREE.Mesh(geo30, mat30);
+            sphere30Mesh.visible = false;
+            scene.add(sphere30Mesh);
+        }
+
+        function createPlaneRings() {
+            const curve15 = new THREE.EllipseCurve(0, 0, 15, 15, 0, 2 * Math.PI, false, 0);
+            const points15 = curve15.getPoints(128);
+            const geometry15 = new THREE.BufferGeometry().setFromPoints(points15);
+            const material15 = new THREE.LineBasicMaterial({ color: 0x00d2ff, opacity: 0.5, transparent: true });
+            ring15Mesh = new THREE.Line(geometry15, material15);
+            ring15Mesh.rotation.x = -Math.PI / 2;
+            ring15Mesh.visible = false;
+            scene.add(ring15Mesh);
+
+            const curve30 = new THREE.EllipseCurve(0, 0, 30, 30, 0, 2 * Math.PI, false, 0);
+            const points30 = curve30.getPoints(128);
+            const geometry30 = new THREE.BufferGeometry().setFromPoints(points30);
+            const material30 = new THREE.LineBasicMaterial({ color: 0xff4422, opacity: 0.5, transparent: true });
+            ring30Mesh = new THREE.Line(geometry30, material30);
+            ring30Mesh.rotation.x = -Math.PI / 2;
+            ring30Mesh.visible = false;
+            scene.add(ring30Mesh);
+        }
+
+        function calculatePosition(ra, dec, dist) {
+            const phi = (90 - dec) * (Math.PI / 180); 
+            const theta = (ra * 15) * (Math.PI / 180);
+            const x = dist * Math.sin(phi) * Math.cos(theta);
+            const y = dist * Math.cos(phi);
+            const z = dist * Math.sin(phi) * Math.sin(theta);
+            return new THREE.Vector3(x, y, z);
+        }
+
+        function createStars() {
+            starData.forEach(data => {
+                let pos = calculatePosition(data.ra, data.dec, data.dist);
+                if(data.offsetRef) { pos.x += 0.05; pos.y += 0.02; }
+
+                const geometry = new THREE.SphereGeometry(data.size, 16, 16);
+                const material = new THREE.MeshBasicMaterial({ color: data.color });
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.position.copy(pos);
+                mesh.userData = { starInfo: data };
+                scene.add(mesh);
+                starsMeshes.push(mesh);
+
+                const spriteMat = new THREE.SpriteMaterial({
+                    map: createGlowTexture(data.color),
+                    transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending,
+                    depthWrite: false
+                });
+                const sprite = new THREE.Sprite(spriteMat);
+                const scale = data.size * 5;
+                sprite.scale.set(scale, scale, 1);
+                mesh.add(sprite);
+
+                const div = document.createElement('div');
+                div.textContent = data.name;
+                
+                if (data.type === 'N') { 
+                    div.className = 'star-label cat-neutron';
+                } else if (data.type === 'BH') { 
+                    div.className = 'star-label cat-blackhole';
+                } else if (data.cat === 'distant') { 
+                    div.className = 'star-label cat-distant';
+                } else if (data.cat === 'local') {
+                    div.className = 'star-label cat-local';
+                } else if (data.cat === 'vega' || data.cat === 'ext') {
+                    div.className = 'star-label cat-vega';
+                } else {
+                    div.className = 'star-label';
+                }
+
+                const label = new CSS2DObject(div);
+                label.position.set(0, data.size + 0.1, 0);
+                mesh.add(label);
+
+                if (data.cat === 'major' && data.dist > 0.1) {
+                    const points = [new THREE.Vector3(0,0,0), pos];
+                    const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
+                    const lineMat = new THREE.LineBasicMaterial({ color: 0x333333, transparent: true, opacity: 0.2 });
+                    scene.add(new THREE.Line(lineGeo, lineMat));
+                }
+            });
+        }
+
+        function createGlowTexture(colorHex) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 64; canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            const col = new THREE.Color(colorHex);
+            const grad = ctx.createRadialGradient(32,32,0, 32,32,32);
+            grad.addColorStop(0, `rgba(${col.r*255},${col.g*255},${col.b*255},1)`);
+            grad.addColorStop(0.5, `rgba(${col.r*255},${col.g*255},${col.b*255},0.1)`);
+            grad.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0,0,64,64);
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        window.setMode = (mode) => {
+            currentMode = mode;
+            for(let i=0; i<3; i++) {
+                const btn = document.getElementById(`btn-mode-${i}`);
+                if (btn) {
+                    if (i === mode) {
+                        btn.style.background = '#003344'; 
+                        btn.style.color = "#ffffff";
+                    } else {
+                        btn.style.background = ''; 
+                        btn.style.color = "#fff";
+                    }
+                }
+            }
+            window.updateVisibility();
+        };
+
+        window.updateVisibility = () => {
+            const showDwarfsMode1 = document.getElementById('chk-dwarf-1').checked;
+            const showDwarfsMode2 = document.getElementById('chk-dwarf-2').checked;
+            const showDistant = document.getElementById('chk-distant').checked;
+            const showLabels = document.getElementById('chk-labels').checked;
+            const showSpheres = document.getElementById('chk-spheres').checked;
+            const showRings = document.getElementById('chk-rings').checked; 
+            
+            let visibleStarsCount = 0;
+            let visibleSystemsCount = 0;
+
+            starsMeshes.forEach(mesh => {
+                const data = mesh.userData.starInfo;
+                let isVisible = false;
+                
+                const isDwarf = (data.type === 'M' || data.type === 'D');
+
+                if (currentMode === 0) {
+                    if (data.id === 'Sun') isVisible = true;
+                } 
+                else if (currentMode === 1) {
+                    if (data.dist <= 15) {
+                        if (data.cat === 'major' && data.dist > 15) isVisible = false;
+                        else if (!isDwarf) isVisible = true;
+                        else if (isDwarf && showDwarfsMode1) isVisible = true;
+                    }
+                } 
+                else if (currentMode === 2) {
+                    if (data.dist <= 30.0) { 
+                        if (!isDwarf) isVisible = true;
+                        else if (isDwarf && showDwarfsMode2) isVisible = true;
+                    }
+                }
+
+                if (showDistant && data.cat === 'distant') {
+                    isVisible = true;
+                }
+                
+                mesh.visible = isVisible;
+                
+                if (isVisible) {
+                    visibleStarsCount++;
+                    if (!data.offsetRef) visibleSystemsCount++;
+                }
+
+                mesh.children.forEach(c => { 
+                    if(c.isCSS2DObject) {
+                        const isPersistent = (data.cat === 'distant');
+                        const shouldBeVisible = (isVisible && (showLabels || isPersistent));
+                        c.element.style.display = shouldBeVisible ? 'block' : 'none';
+                        c.element.style.opacity = shouldBeVisible ? 1 : 0;
+                    }
+                });
+            });
+
+            document.getElementById('val-systems').textContent = visibleSystemsCount;
+            document.getElementById('val-stars').textContent = visibleStarsCount;
+
+            if (sphere15Mesh && sphere30Mesh) {
+                sphere15Mesh.visible = showSpheres;
+                sphere30Mesh.visible = showSpheres;
+            }
+
+            if (ring15Mesh && ring30Mesh) {
+                ring15Mesh.visible = showRings;
+                ring30Mesh.visible = showRings;
+            }
+        };
+
+        function onPointerDown(event) {
+            if(event.target.closest('button') || event.target.closest('.mode-btn') || event.target.closest('input')) return;
+
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            raycaster.params.Points.threshold = 0.5; 
+
+            const visibleMeshes = starsMeshes.filter(m => m.visible);
+            const intersects = raycaster.intersectObjects(visibleMeshes);
+
+            if (intersects.length > 0) {
+                handleStarSelection(intersects[0].object);
+            }
+        }
+
+        function handleStarSelection(mesh) {
+            if (selectedPoints.length === 1 && selectedPoints[0].mesh === mesh) {
+                return; 
+            }
+
+            if (selectedPoints.length >= 2) {
+                clearSelectionRingsOnly();
+            }
+
+            const ringGeo = new THREE.RingGeometry(mesh.geometry.parameters.radius * 1.5, mesh.geometry.parameters.radius * 2, 32);
+            const ringMat = new THREE.MeshBasicMaterial({ color: 0x00ff00, side: THREE.DoubleSide });
+            const ring = new THREE.Mesh(ringGeo, ringMat);
+            ring.position.copy(mesh.position);
+            ring.lookAt(camera.position);
+            scene.add(ring);
+
+            selectedPoints.push({ mesh: mesh, ring: ring });
+            updateInfoPanel();
+
+            if (selectedPoints.length === 2) {
+                drawMeasurement();
+            }
+        }
+
+        function clearSelectionRingsOnly() {
+            selectedPoints.forEach(obj => scene.remove(obj.ring));
+            selectedPoints = [];
+        }
+
+        function drawMeasurement() {
+            const p1 = selectedPoints[0].mesh.position;
+            const p2 = selectedPoints[1].mesh.position;
+            const distance = p1.distanceTo(p2);
+
+            const geometry = new THREE.BufferGeometry().setFromPoints([p1, p2]);
+            const material = new THREE.LineBasicMaterial({ color: 0x00ff00, linewidth: 2 });
+            const line = new THREE.Line(geometry, material);
+            line.frustumCulled = false;
+            scene.add(line);
+
+            const div = document.createElement('div');
+            div.className = 'measure-label';
+            div.textContent = distance.toFixed(1) + " ly";
+            const labelObj = new CSS2DObject(div);
+            
+            const mid = new THREE.Vector3().lerpVectors(p1, p2, 0.5);
+            labelObj.position.copy(mid);
+            scene.add(labelObj);
+
+            activeMeasurements.push({ line: line, label: labelObj });
+        }
+
+        function updateInfoPanel() {
+            const display = document.getElementById('measurement-data');
+            if(selectedPoints.length === 0) {
+                display.textContent = "Durum: Yeni ölçüm için 1. yıldızı seçin.";
+            } else if (selectedPoints.length === 1) {
+                const s1 = selectedPoints[0].mesh.userData.starInfo;
+                display.textContent = `1. Nokta: ${s1.name}`;
+            } else {
+                const s1 = selectedPoints[0].mesh.userData.starInfo;
+                const s2 = selectedPoints[1].mesh.userData.starInfo;
+                const dist = selectedPoints[0].mesh.position.distanceTo(selectedPoints[1].mesh.position);
+                
+                display.textContent = 
+`[${s1.name}] - [${s2.name}]
+Mesafe: ${dist.toFixed(2)} ly
+(Yeni bir yıldıza tıklayarak ölçüme devam edebilirsiniz)`;
+            }
+        }
+
+        window.resetAllMeasurements = () => {
+            clearSelectionRingsOnly();
+            activeMeasurements.forEach(m => {
+                scene.remove(m.line);
+                scene.remove(m.label);
+            });
+            activeMeasurements = [];
+            updateInfoPanel();
+        };
+
+        window.focusStar = (id) => {
+            const target = starData.find(s => s.id === id);
+            if(!target) return;
+
+            if (id === 'Sun') {
+                window.resetAllMeasurements();
+            }
+
+            const pos = calculatePosition(target.ra, target.dec, target.dist);
+            controls.target.copy(pos);
+            camera.position.copy(pos).add(new THREE.Vector3(2, 2, 5)); 
+        };
+
+        window.measureToSun = (id) => {
+            const target = starData.find(s => s.id === id);
+            if(!target) return;
+
+            if(target.cat === 'distant') {
+                const chk = document.getElementById('chk-distant');
+                if(chk && !chk.checked) {
+                    chk.checked = true;
+                    window.updateVisibility();
+                }
+            }
+
+            const targetMesh = starsMeshes.find(m => m.userData.starInfo.id === id);
+            const sunMesh = starsMeshes.find(m => m.userData.starInfo.id === 'Sun');
+            if(!targetMesh || !sunMesh) return;
+
+            window.resetAllMeasurements();
+            handleStarSelection(sunMesh);
+            handleStarSelection(targetMesh);
+        };
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            selectedPoints.forEach(pt => { if(pt.ring) pt.ring.lookAt(camera.position); });
+            renderer.render(scene, camera);
+            labelRenderer.render(scene, camera);
+        }
+
+        init();
+    </script>
+</body>
+</html>
